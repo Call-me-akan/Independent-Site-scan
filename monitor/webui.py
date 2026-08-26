@@ -86,6 +86,7 @@ def create_app(config_path: str = "config.yaml") -> Flask:
         )
         cfg.sites = [s for s in cfg.sites if s.id != site.id] + [site]
         save_config(cfg, Path(config_path))
+        db.init_db(cfg.storage.path)
         with db.db(cfg.storage.path) as conn:
             db.upsert_site(conn, site)
         return jsonify({"ok": True, "id": site_id})
@@ -103,6 +104,7 @@ def create_app(config_path: str = "config.yaml") -> Flask:
         site = get_site(cfg, site_id)
         site.enabled = not site.enabled
         save_config(cfg, Path(config_path))
+        db.init_db(cfg.storage.path)
         with db.db(cfg.storage.path) as conn:
             db.upsert_site(conn, site)
         return jsonify({"ok": True, "enabled": site.enabled})
