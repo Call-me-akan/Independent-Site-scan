@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -12,6 +11,33 @@ except ImportError as exc:  # pragma: no cover
 
 
 DEFAULT_CONFIG_PATH = Path("config.yaml")
+
+DEFAULT_CONFIG_YAML = """sites:
+  - id: example
+    name: example
+    base_url: https://example.com
+    source_url: ""
+    adapter: shopify_products_json
+    interval_minutes: 15
+    enabled: true
+    full_scan_pages: 40
+    incremental_pages: 1
+    notify:
+      new_product: true
+      price_change: false
+      update: false
+      error: true
+
+feishu:
+  webhook_url: ""
+  secret: ""
+
+storage:
+  path: ./data/monitor.db
+
+export:
+  dir: ./exports
+"""
 
 
 @dataclass
@@ -55,8 +81,8 @@ class AppConfig:
 def init_config(path: Path = DEFAULT_CONFIG_PATH) -> Path:
     if path.exists():
         return path
-    template = Path(__file__).resolve().parents[1] / "config.example.yaml"
-    shutil.copyfile(template, path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(DEFAULT_CONFIG_YAML, encoding="utf-8")
     return path
 
 

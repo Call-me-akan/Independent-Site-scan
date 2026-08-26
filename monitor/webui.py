@@ -238,6 +238,14 @@ def create_app(config_path: str = "config.yaml") -> Flask:
 
 
 def run_web(config_path: str = "config.yaml", host: str = "127.0.0.1", port: int = 8321, open_browser: bool = True) -> None:
+    cfg_path = Path(config_path)
+    if not cfg_path.exists():
+        from .config import init_config as _init_config
+
+        _init_config(cfg_path)
+        print(f"Config auto-created: {cfg_path}", flush=True)
+    cfg = load_config(cfg_path)
+    db.init_db(cfg.storage.path)
     app = create_app(config_path)
     if open_browser:
         threading.Timer(0.8, lambda: webbrowser.open(f"http://{host}:{port}")).start()

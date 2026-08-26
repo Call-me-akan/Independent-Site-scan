@@ -50,6 +50,11 @@ def main(argv: list[str] | None = None) -> int:
     web.add_argument("--no-browser", action="store_true")
 
     args = parser.parse_args(argv)
+    if args.command == "web":
+        from .webui import run_web
+
+        run_web(config_path="config.yaml", host="127.0.0.1", port=args.port, open_browser=not args.no_browser)
+        return 0
     if args.command == "init":
         config_path = init_config()
         config = load_config(config_path)
@@ -128,12 +133,6 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         notifier.send_text("独立站商品监控 Agent 测试消息")
         print("Feishu test message sent")
-        return 0
-
-    if args.command == "web":
-        from .webui import run_web
-
-        run_web(config_path="config.yaml", host="127.0.0.1", port=args.port, open_browser=not args.no_browser)
         return 0
 
     parser.print_help()
