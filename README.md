@@ -85,6 +85,36 @@ logs/monitor.log
 monitor.pid
 ```
 
+## WebUI（本地管理面板）
+
+启动本地 WebUI：
+
+```bash
+python -m monitor web
+```
+
+启动后会自动打开浏览器：
+
+```text
+http://127.0.0.1:8321
+```
+
+WebUI 提供：
+
+- 站点管理：添加 / 删除 / 启用停用
+- 手动扫描单个站点
+- 商品查询（按站点 / 关键词）
+- 商品导出 CSV / JSON
+- 最近事件查看
+- 飞书 Webhook 配置与测试
+
+常用参数：
+
+```bash
+python -m monitor web --port 9000          # 自定义端口
+python -m monitor web --no-browser          # 不自动打开浏览器
+```
+
 ## CI
 
 每次 push / pull request 会运行：
