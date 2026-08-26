@@ -1,4 +1,4 @@
-# 独立站上新监控 Agent
+# Independent-Site-scan / 独立站上新监控 Agent
 
 一个本地运行的独立站商品监控工具，优先支持 Shopify `/products.json`。
 
