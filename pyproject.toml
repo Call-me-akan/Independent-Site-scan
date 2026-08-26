@@ -14,3 +14,4 @@ monitor = "monitor.cli:main"
 
 [tool.setuptools]
 packages = ["monitor", "monitor.adapters", "monitor.notifiers"]
+

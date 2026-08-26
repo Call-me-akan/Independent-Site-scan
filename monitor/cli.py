@@ -21,6 +21,7 @@ def main(argv: list[str] | None = None) -> int:
     add = sub.add_parser("add-site", help="add or update a monitored site")
     add.add_argument("--id", required=True)
     add.add_argument("--url", required=True)
+    add.add_argument("--source-url", default="")
     add.add_argument("--name", default="")
     add.add_argument("--adapter", default="shopify_products_json")
     add.add_argument("--interval", type=int, default=15)
@@ -65,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
             id=args.id,
             name=args.name or args.id,
             base_url=args.url.rstrip("/"),
+            source_url=args.source_url,
             adapter=args.adapter,
             interval_minutes=args.interval,
             enabled=True,
@@ -85,8 +87,11 @@ def main(argv: list[str] | None = None) -> int:
             if not site.enabled:
                 print(f"skip disabled site: {site.id}")
                 continue
-            result = scan_site(config, site, notify=not args.no_notify, full=args.full or None, resume=args.resume, from_page=args.from_page)
-            print(f"{result.site_id}: {result.scan_type}, products={result.product_count}, new={result.new_count}, pages={result.pages}, notified={result.notified}")
+            try:
+                result = scan_site(config, site, notify=not args.no_notify, full=args.full or None, resume=args.resume, from_page=args.from_page)
+                print(f"{result.site_id}: {result.scan_type}, products={result.product_count}, new={result.new_count}, pages={result.pages}, notified={result.notified}")
+            except Exception as exc:  # noqa: BLE001
+                print(f"{site.id}: scan failed: {exc}", file=sys.stderr)
         return 0
 
     if args.command == "run":

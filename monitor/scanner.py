@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from . import db
-from .adapters.shopify import AdapterError, get_adapter
+from .adapters.base import AdapterError
+from .adapters.factory import get_adapter
 from .config import AppConfig, SiteConfig
 from .notifiers.feishu import FeishuWebhookNotifier, NotifyError
 
@@ -35,7 +36,7 @@ def scan_site(config: AppConfig, site: SiteConfig, notify: bool = True, full: bo
         total_products = 0
         new_total = 0
         try:
-            adapter = get_adapter(site.adapter, site.base_url)
+            adapter = get_adapter(site.adapter, site.base_url, source_url=site.source_url)
             event_ids: list[int] = []
             all_new_products: list[dict] = []
             pages = 0

@@ -5,17 +5,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
 
+from .base import AdapterError, FetchResult, float_or_none
 
-class AdapterError(RuntimeError):
-    pass
-
-
-@dataclass
-class FetchResult:
-    products: list[dict]
-    pages: int
 
 
 class ShopifyProductsJsonAdapter:
@@ -86,7 +78,7 @@ class ShopifyProductsJsonAdapter:
 
 def normalize_product(base_url: str, raw: dict) -> dict:
     variants = raw.get("variants") or []
-    prices = [_float_or_none(v.get("price")) for v in variants]
+    prices = [float_or_none(v.get("price")) for v in variants]
     prices = [p for p in prices if p is not None]
     images = raw.get("images") or []
     handle = raw.get("handle") or ""
@@ -110,15 +102,3 @@ def normalize_product(base_url: str, raw: dict) -> dict:
         "raw": raw,
     }
 
-
-def get_adapter(adapter_name: str, base_url: str):
-    if adapter_name == ShopifyProductsJsonAdapter.name:
-        return ShopifyProductsJsonAdapter(base_url)
-    raise AdapterError(f"Unsupported adapter: {adapter_name}")
-
-
-def _float_or_none(value) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None

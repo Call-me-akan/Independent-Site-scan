@@ -19,6 +19,7 @@ class SiteConfig:
     id: str
     name: str
     base_url: str
+    source_url: str = ""
     adapter: str = "shopify_products_json"
     interval_minutes: int = 15
     enabled: bool = True

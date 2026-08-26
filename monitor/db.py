@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS sites (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   base_url TEXT NOT NULL,
+  source_url TEXT NOT NULL DEFAULT '',
   adapter TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1,
   interval_minutes INTEGER NOT NULL DEFAULT 15,
@@ -119,6 +120,8 @@ def migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE sites ADD COLUMN baseline_complete INTEGER NOT NULL DEFAULT 0")
     if "full_scan_cursor_page" not in site_cols:
         conn.execute("ALTER TABLE sites ADD COLUMN full_scan_cursor_page INTEGER NOT NULL DEFAULT 1")
+    if "source_url" not in site_cols:
+        conn.execute("ALTER TABLE sites ADD COLUMN source_url TEXT NOT NULL DEFAULT ''")
 
 
 
@@ -126,11 +129,12 @@ def upsert_site(conn: sqlite3.Connection, site) -> None:
     ts = now_iso()
     conn.execute(
         """
-        INSERT INTO sites (id, name, base_url, adapter, enabled, interval_minutes, full_scan_pages, incremental_pages, full_scan_cursor_page, created_at, updated_at, baseline_complete)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT baseline_complete FROM sites WHERE id = ?), 0))
+        INSERT INTO sites (id, name, base_url, source_url, adapter, enabled, interval_minutes, full_scan_pages, incremental_pages, full_scan_cursor_page, created_at, updated_at, baseline_complete)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT baseline_complete FROM sites WHERE id = ?), 0))
         ON CONFLICT(id) DO UPDATE SET
           name=excluded.name,
           base_url=excluded.base_url,
+          source_url=excluded.source_url,
           adapter=excluded.adapter,
           enabled=excluded.enabled,
           interval_minutes=excluded.interval_minutes,
@@ -138,7 +142,7 @@ def upsert_site(conn: sqlite3.Connection, site) -> None:
           incremental_pages=excluded.incremental_pages,
           updated_at=excluded.updated_at
         """,
-        (site.id, site.name, site.base_url, site.adapter, int(site.enabled), site.interval_minutes, site.full_scan_pages, site.incremental_pages, 1, ts, ts, site.id),
+        (site.id, site.name, site.base_url, site.source_url, site.adapter, int(site.enabled), site.interval_minutes, site.full_scan_pages, site.incremental_pages, 1, ts, ts, site.id),
     )
 
 
