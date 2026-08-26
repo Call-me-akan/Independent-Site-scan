@@ -65,6 +65,26 @@ monitor export --site viqzes --format csv
 monitor test-feishu
 ```
 
+## 本地常驻运行
+
+```bash
+scripts/start-daemon.sh
+scripts/status-daemon.sh
+scripts/stop-daemon.sh
+```
+
+日志位置：
+
+```text
+logs/monitor.log
+```
+
+进程 PID：
+
+```text
+monitor.pid
+```
+
 ## CI
 
 每次 push / pull request 会运行：
