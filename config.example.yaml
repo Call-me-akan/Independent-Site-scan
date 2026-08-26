@@ -1,0 +1,24 @@
+sites:
+  - id: viqzes
+    name: viqzes
+    base_url: https://viqzes.com
+    adapter: shopify_products_json
+    interval_minutes: 15
+    enabled: true
+    full_scan_pages: 40
+    incremental_pages: 1
+    notify:
+      new_product: true
+      price_change: false
+      update: false
+      error: true
+
+feishu:
+  webhook_url: ""
+  secret: ""
+
+storage:
+  path: ./data/monitor.db
+
+export:
+  dir: ./exports
