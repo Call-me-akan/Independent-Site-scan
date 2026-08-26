@@ -127,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def run_loop(config: AppConfig, once: bool = False) -> int:
     next_due = {site.id: 0.0 for site in config.sites if site.enabled}
-    print("monitor daemon started. Press Ctrl+C to stop.")
+    print("monitor daemon started. Press Ctrl+C to stop.", flush=True)
     try:
         while True:
             now = time.time()
@@ -138,15 +138,15 @@ def run_loop(config: AppConfig, once: bool = False) -> int:
                     continue
                 try:
                     result = scan_site(config, site, notify=True, full=None)
-                    print(f"{site.id}: {result.scan_type}, products={result.product_count}, new={result.new_count}")
+                    print(f"{site.id}: {result.scan_type}, products={result.product_count}, new={result.new_count}", flush=True)
                 except Exception as exc:  # noqa: BLE001
-                    print(f"{site.id}: scan failed: {exc}", file=sys.stderr)
+                    print(f"{site.id}: scan failed: {exc}", file=sys.stderr, flush=True)
                 next_due[site.id] = time.time() + max(1, site.interval_minutes) * 60
             if once:
                 return 0
             time.sleep(5)
     except KeyboardInterrupt:
-        print("stopped")
+        print("stopped", flush=True)
         return 0
 
 
