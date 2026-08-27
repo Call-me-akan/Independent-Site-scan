@@ -10,3 +10,5 @@
 - [FIX] 确认 webhook 无缓存：config.yaml 实时读取，用户本地 31 站 + 飞书 + 钉钉配置完整保留。
 - [PROCESS] 用户要求规范流程：开发分支 → 本地 pytest → 合 main → CI 通过 → 才打 tag 发版；每步记录本文件。本次修复改走 `fix/init-merge` 分支。
 - [RELEASE] v0.5.0 已发布（预设站点模板 + 扫描/发送解耦 + daemon 总开关）。
+- [RELEASE] v0.5.1 已发布（修复 init_config 合并预设站点）。
+- [PROCESS-V0.5.1] 首次按规范流程执行并跑通：本地 pytest 26 passed → 建 fix/init-merge 分支 → 提交推送 → gh pr create #1 触发 CI（3.11+3.12 pass）→ gh pr merge → 合入 main → 打 v0.5.1 tag → release 构建成功。今后发版都按此流程，并在本文件记录。
