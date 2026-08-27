@@ -55,8 +55,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "web":
         from .webui import run_web
+        from .config import config_path as _cfg_path
 
-        run_web(config_path="config.yaml", host="127.0.0.1", port=args.port, open_browser=not args.no_browser)
+        run_web(config_path=str(_cfg_path()), host="127.0.0.1", port=args.port, open_browser=not args.no_browser)
         return 0
     if args.command == "init":
         config_path = init_config()

@@ -12,3 +12,6 @@
 - [RELEASE] v0.5.0 已发布（预设站点模板 + 扫描/发送解耦 + daemon 总开关）。
 - [RELEASE] v0.5.1 已发布（修复 init_config 合并预设站点）。
 - [PROCESS-V0.5.1] 首次按规范流程执行并跑通：本地 pytest 26 passed → 建 fix/init-merge 分支 → 提交推送 → gh pr create #1 触发 CI（3.11+3.12 pass）→ gh pr merge → 合入 main → 打 v0.5.1 tag → release 构建成功。今后发版都按此流程，并在本文件记录。
+- [FEATURE] 研究「开箱即用」体验：验证 v0.5.1 release 二进制在全新目录直接 `monitor web` 即可自动生成 31 站配置（实测成功）。
+- [FIX] 数据目录固定化：新增 `data_dir()` 解析—— 优先级 $MONITOR_AGENT_DIR > cwd 已存在 config.yaml（开发兼容）> ~/monitor-agent（打包版固定位置）。storage/export 相对路径改为基于 data_dir 解析，解决「打包版在不同 cwd 下 config 位置漂移、换目录像丢失站点」的问题。新增 tests/test_data_dir.py（5 用例），本地 pytest 31 passed。
+- [TODO] 打包版 config 固定到 ~/monitor-agent 后，需同步提供「一键启动脚本」（macOS .command / Windows .bat）封装 Gatekeeper 解除+启动 web，实现真正的双击即用。
