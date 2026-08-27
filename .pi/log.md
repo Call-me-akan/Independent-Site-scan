@@ -19,3 +19,4 @@
 - [UX] 用户反馈「双击 monitor-macos 打不开」：根因是 CLI 程序不带参数运行只打印 help。新增一键启动脚本 start-monitor.command (macOS) / start-monitor.bat (Windows)，release 改为 zip 包（含二进制 + 启动脚本 + README）。
 - [FIX] release zip 踩坑两轮：① Windows runner 无 zip 命令→改 python zipfile；② heredoc (<<PYEOF) 在 Actions runner 挂起→改独立 makezip.py，release.yml 直接 python3 scripts/makezip.py。已随 v0.6.1 发布，macOS zip 已验证含 start-monitor.command。
 - [FIX] 「开箱即用」最终 bug：data_dir() 的 cwd-优先逻辑导致打包版例外——用户在 Downloads 残留旧 config.yaml 时，新程序会读那份(仅 example)而绕开固定目录。修复：PyInstaller 打包版(frozen)一律用 $HOME/monitor-agent 固定目录忽略 cwd；仅源码开发模式保留 cwd 兼容。新增 test_data_dir_packaged_ignores_cwd，本地 pytest 32 passed。将随 v0.6.2 发布。
+- [V0.6.2-RELEASE-✅] 已发布并完整验证：cwd 放旧 example config 的最坏场景下，打包版仍用固定目录、WebUI 31 站齐全、webhook 空待配、zip 含 start-monitor.command。用户操作路径：下载 zip → 解压 → 双击 start-monitor.command → 浏览器自动打开 → 填 webhook 即用。
