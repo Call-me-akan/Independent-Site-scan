@@ -192,6 +192,8 @@ scripts\build-win.bat
 
 产物在 `dist/monitor`，开箱即用（无需 Python 环境）。
 
+> macOS 用户若从网上下载/收到别人给的二进制，首次运行可能被 Gatekeeper 拦截，解除方法见 [docs/macos-gatekeeper-zh.md](docs/macos-gatekeeper-zh.md)，或执行 `./scripts/unlock-macos.sh <路径>`。
+
 ## Docker
 
 ```bash
