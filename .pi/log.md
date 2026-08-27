@@ -18,3 +18,4 @@
 - [V0.6.0-RELEASE] 固定数据目录已随 v0.6.0 发布。完整「开箱即用」验证（全新 HOME + 直接 web 命令，不执行任何其他命令）：WebUI 站点数 31、daemon 开启、config 自动生成在 $HOME/monitor-agent/、飞书/钉钉 webhook 为空待配、storage/export 解析为固定目录绝对路径不依赖 cwd。✅ 全部通过，后续发版以此为准验证。
 - [UX] 用户反馈「双击 monitor-macos 打不开」：根因是 CLI 程序不带参数运行只打印 help。新增一键启动脚本 start-monitor.command (macOS) / start-monitor.bat (Windows)，release 改为 zip 包（含二进制 + 启动脚本 + README）。
 - [FIX] release zip 踩坑两轮：① Windows runner 无 zip 命令→改 python zipfile；② heredoc (<<PYEOF) 在 Actions runner 挂起→改独立 makezip.py，release.yml 直接 python3 scripts/makezip.py。已随 v0.6.1 发布，macOS zip 已验证含 start-monitor.command。
+- [FIX] 「开箱即用」最终 bug：data_dir() 的 cwd-优先逻辑导致打包版例外——用户在 Downloads 残留旧 config.yaml 时，新程序会读那份(仅 example)而绕开固定目录。修复：PyInstaller 打包版(frozen)一律用 $HOME/monitor-agent 固定目录忽略 cwd；仅源码开发模式保留 cwd 兼容。新增 test_data_dir_packaged_ignores_cwd，本地 pytest 32 passed。将随 v0.6.2 发布。
