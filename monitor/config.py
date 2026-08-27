@@ -58,6 +58,7 @@ class SiteConfig:
 class FeishuConfig:
     webhook_url: str = ""
     secret: str = ""
+    verify_ssl: bool = True
 
 
 @dataclass

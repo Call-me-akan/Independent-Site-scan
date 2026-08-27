@@ -205,7 +205,7 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     @app.post("/api/feishu/test")
     def api_feishu_test():
         cfg = load()
-        notifier = FeishuWebhookNotifier(cfg.feishu.webhook_url, cfg.feishu.secret)
+        notifier = FeishuWebhookNotifier(cfg.feishu.webhook_url, cfg.feishu.secret, verify_ssl=cfg.feishu.verify_ssl)
         if not notifier.enabled():
             return jsonify({"ok": False, "error": "webhook_url is empty"}), 400
         try:

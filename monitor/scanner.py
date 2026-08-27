@@ -21,7 +21,7 @@ class ScanResult:
 
 def scan_site(config: AppConfig, site: SiteConfig, notify: bool = True, full: bool | None = None, resume: bool = False, from_page: int = 1) -> ScanResult:
     db.init_db(config.storage.path)
-    notifier = FeishuWebhookNotifier(config.feishu.webhook_url, config.feishu.secret)
+    notifier = FeishuWebhookNotifier(config.feishu.webhook_url, config.feishu.secret, verify_ssl=config.feishu.verify_ssl)
     with db.db(config.storage.path) as conn:
         db.upsert_site(conn, site)
         baseline_done = db.baseline_complete(conn, site.id)

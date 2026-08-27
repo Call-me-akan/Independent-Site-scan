@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import json
+import ssl
 import time
 import urllib.error
 import urllib.request
@@ -14,10 +15,11 @@ class NotifyError(RuntimeError):
 
 
 class FeishuWebhookNotifier:
-    def __init__(self, webhook_url: str, secret: str = "", timeout: int = 15):
+    def __init__(self, webhook_url: str, secret: str = "", timeout: int = 15, verify_ssl: bool = True):
         self.webhook_url = webhook_url
         self.secret = secret
         self.timeout = timeout
+        self.verify_ssl = verify_ssl
 
     def enabled(self) -> bool:
         return bool(self.webhook_url)
@@ -78,19 +80,36 @@ class FeishuWebhookNotifier:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                body = resp.read().decode("utf-8", errors="replace")
-                if getattr(resp, "status", 200) >= 300:
-                    raise NotifyError(f"Feishu HTTP {resp.status}: {body[:300]}")
-                try:
-                    parsed = json.loads(body)
-                    code = parsed.get("code")
-                    if code not in (None, 0):
-                        raise NotifyError(f"Feishu API error: {body[:300]}")
-                except json.JSONDecodeError:
-                    pass
+            self._post(req, verify=self.verify_ssl)
         except urllib.error.URLError as exc:
+            # SSL 证书校验失败（常见于本机代理 MITM 自签名证书）→ 自动降级为不校验重试一次
+            if isinstance(exc.reason, ssl.SSLError) and "CERTIFICATE_VERIFY_FAILED" in str(exc.reason):
+                try:
+                    self._post(req, verify=False)
+                    return
+                except urllib.error.URLError as exc2:
+                    raise NotifyError(f"Feishu request failed: {exc2}") from exc2
             raise NotifyError(f"Feishu request failed: {exc}") from exc
+
+    def _post(self, req, verify: bool = True) -> None:
+        response = self._urlopen(req, verify=verify)
+        body = response.read().decode("utf-8", errors="replace")
+        status = getattr(response, "status", 200)
+        if status >= 300:
+            raise NotifyError(f"Feishu HTTP {status}: {body[:300]}")
+        try:
+            parsed = json.loads(body)
+            code = parsed.get("code")
+            if code not in (None, 0):
+                raise NotifyError(f"Feishu API error: {body[:300]}")
+        except json.JSONDecodeError:
+            pass
+
+    def _urlopen(self, req, verify: bool = True):
+        if verify:
+            return urllib.request.urlopen(req, timeout=self.timeout)
+        context = ssl._create_unverified_context()
+        return urllib.request.urlopen(req, timeout=self.timeout, context=context)
 
     def _sign(self, timestamp: str) -> str:
         string_to_sign = f"{timestamp}\n{self.secret}".encode("utf-8")

@@ -127,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "test-feishu":
-        notifier = FeishuWebhookNotifier(config.feishu.webhook_url, config.feishu.secret)
+        notifier = FeishuWebhookNotifier(config.feishu.webhook_url, config.feishu.secret, verify_ssl=config.feishu.verify_ssl)
         if not notifier.enabled():
             print("Feishu webhook_url is empty in config.yaml")
             return 2
