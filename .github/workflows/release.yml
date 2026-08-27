@@ -60,15 +60,8 @@ jobs:
       - name: Create zip
         shell: bash
         run: |
-          python -c "
-import zipfile, pathlib
-src = pathlib.Path('release')
-with zipfile.ZipFile('${{ matrix.zip_name }}.zip', 'w', zipfile.ZIP_DEFLATED) as z:
-    for f in sorted(src.rglob('*')):
-        if f.is_file():
-            z.write(f, f.relative_to(src))
-print('zip created: ${{ matrix.zip_name }}.zip')
-"
+          chmod +x scripts/build-release-zip.sh
+          ./scripts/build-release-zip.sh "${{ matrix.zip_name }}.zip" release
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
