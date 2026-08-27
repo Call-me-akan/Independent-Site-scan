@@ -23,12 +23,49 @@ class FeishuWebhookNotifier:
         return bool(self.webhook_url)
 
     def send_text(self, text: str) -> None:
+        self._send({"msg_type": "text", "content": {"text": text}})
+
+    def send_card(self, title: str, markdown: str, url: str = "", url_text: str = "查看商品") -> None:
+        """Send a Feishu interactive card message.
+
+        Note: Feishu custom-bot webhook cards cannot embed remote images
+        (requires image_key from an upload API), so product image URLs are
+        shown in the markdown body as small text.
+        """
         if not self.webhook_url:
             return
-        payload = {
-            "msg_type": "text",
-            "content": {"text": text},
+        elements = []
+        if markdown:
+            elements.append({"tag": "markdown", "content": markdown})
+        if url:
+            elements.append(
+                {
+                    "tag": "action",
+                    "actions": [
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": url_text},
+                            "type": "primary",
+                            "url": url,
+                        }
+                    ],
+                }
+            )
+        card = {
+            "msg_type": "interactive",
+            "card": {
+                "header": {
+                    "title": {"tag": "plain_text", "content": title},
+                    "template": "blue",
+                },
+                "elements": elements,
+            },
         }
+        self._send(card)
+
+    def _send(self, payload: dict) -> None:
+        if not self.webhook_url:
+            return
         if self.secret:
             timestamp = str(int(time.time()))
             payload["timestamp"] = timestamp

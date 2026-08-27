@@ -58,9 +58,9 @@ def scan_site(config: AppConfig, site: SiteConfig, notify: bool = True, full: bo
                 conn.commit()
             did_notify = False
             if should_notify_new and all_new_products:
-                text = format_new_products(site, all_new_products)
                 try:
-                    notifier.send_text(text)
+                    title, markdown, first_url = format_new_products_card(site, all_new_products)
+                    notifier.send_card(title, markdown, url=first_url or "")
                     db.set_events_notified(conn, event_ids)
                     did_notify = True
                 except NotifyError as exc:
@@ -95,6 +95,33 @@ def format_new_products(site: SiteConfig, products: list[dict]) -> str:
     if len(products) > 10:
         lines.append(f"还有 {len(products) - 10} 个新品未展示，请导出查看。")
     return "\n".join(lines).strip()
+
+
+def format_new_products_card(site: SiteConfig, products: list[dict]) -> tuple[str, str, str]:
+    """Return (card_title, card_markdown, first_product_url)."""
+    shown = products[:8]
+    lines = []
+    first_url = ""
+    for product in shown:
+        price = _price(product)
+        published = product.get('published_at') or product.get('created_at') or ''
+        img = (product.get('image') or '').strip()
+        url = (product.get('url') or '').strip()
+        if not first_url and url:
+            first_url = url
+        lines.append(f"**{product.get('title', '')}**")
+        lines.append(f"💰 {price}  ·  🆕 {published[:16]}")
+        if img:
+            lines.append(f"📷 图片: {img}")
+        if url:
+            lines.append(f"🔗 {url}")
+        lines.append("")
+    if not shown:
+        lines.append("暂无商品信息")
+    summary = f"发现 {len(products)} 个新品（最新 {len(shown)} 个）"
+    title = f"[{site.name}] {summary}"
+    markdown = "\n".join(lines).strip()
+    return title, markdown, first_url
 
 
 def _price(product: dict) -> str:

@@ -132,7 +132,13 @@ def main(argv: list[str] | None = None) -> int:
             print("Feishu webhook_url is empty in config.yaml")
             return 2
         notifier.send_text("独立站商品监控 Agent 测试消息")
-        print("Feishu test message sent")
+        notifier.send_card(
+            "独立站商品监控 Agent 测试卡片",
+            "**这是卡片消息测试**\n\n✅ 文本消息与卡片消息都已支持\n🔥 新品通知将使用此卡片样式",
+            url=config.sites[0].base_url if config.sites else "",
+            url_text="打开站点",
+        )
+        print("Feishu text + card test sent")
         return 0
 
     parser.print_help()
