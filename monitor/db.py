@@ -218,6 +218,22 @@ def set_events_notified(conn: sqlite3.Connection, event_ids: list[int]) -> None:
     conn.execute(f"UPDATE events SET notified = 1 WHERE id IN ({placeholders})", event_ids)
 
 
+def pending_notify_events(conn: sqlite3.Connection, site_id: str | None = None, limit: int = 200) -> list[sqlite3.Row]:
+    """Return new_product events that haven't been notified yet, newest first."""
+    if site_id:
+        return conn.execute(
+            "SELECT id, site_id, event_type, product_id, title, payload_json, created_at FROM events "
+            "WHERE event_type = 'new_product' AND notified = 0 AND site_id = ? "
+            "ORDER BY id ASC LIMIT ?",
+            (site_id, limit),
+        ).fetchall()
+    return conn.execute(
+        "SELECT id, site_id, event_type, product_id, title, payload_json, created_at FROM events "
+        "WHERE event_type = 'new_product' AND notified = 0 ORDER BY id ASC LIMIT ?",
+        (limit,),
+    ).fetchall()
+
+
 def upsert_products(conn: sqlite3.Connection, site_id: str, products: list[dict]) -> list[dict]:
     before = existing_product_ids(conn, site_id)
     ts = now_iso()

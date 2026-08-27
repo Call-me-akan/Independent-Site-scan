@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from pathlib import Path
 
 from . import db
 from .config import AppConfig, SiteConfig, get_site, init_config, load_config, save_config
@@ -161,10 +162,21 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def run_loop(config: AppConfig, once: bool = False) -> int:
+    from .state import ControlState
+
+    state_path = Path(config.storage.path).parent / "daemon.state"
+    ctrl = ControlState(state_path)
     next_due = {site.id: 0.0 for site in config.sites if site.enabled}
-    print("monitor daemon started. Press Ctrl+C to stop.", flush=True)
+    print(f"monitor daemon started. Ctrl+C to stop. 开关状态文件: {state_path}", flush=True)
+    print("提示：WebUI 里可点顶部「开始/暂停监控」控制扫描，当前默认运行。", flush=True)
     try:
         while True:
+            if ctrl.read("enabled", True) is False:
+                if not once:
+                    time.sleep(5)
+                    continue
+                print("监控已暂停（daemon.state enabled=false）", flush=True)
+                break
             now = time.time()
             for site in config.sites:
                 if not site.enabled:

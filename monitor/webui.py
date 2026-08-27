@@ -25,6 +25,18 @@ from .scanner import scan_site
 from .config import SiteConfig
 
 
+def _daemon_state_path(cfg) -> Path:
+    from .state import ControlState
+
+    return Path(cfg.storage.path).parent / "daemon.state"
+
+
+def _read_daemon_state(cfg) -> bool:
+    from .state import ControlState
+
+    return bool(ControlState(_daemon_state_path(cfg)).read("enabled", True))
+
+
 def create_app(config_path: str = "config.yaml") -> Flask:
     app = Flask(__name__)
     app.config["CONFIG_PATH"] = config_path
@@ -60,6 +72,8 @@ def create_app(config_path: str = "config.yaml") -> Flask:
         return jsonify({
             "sites": sites,
             "feishu_configured": bool(cfg.feishu.webhook_url),
+            "dingtalk_configured": bool(cfg.dingtalk.webhook_url),
+            "daemon_enabled": _read_daemon_state(cfg),
         })
 
     # ---------- site management ----------
@@ -252,6 +266,93 @@ def create_app(config_path: str = "config.yaml") -> Flask:
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
+    # ---------- control ----------
+
+    @app.post("/api/control")
+    def api_control():
+        """Toggle daemon: {"enabled": true/false}."""
+        cfg = load()
+        data = request.get_json(silent=True) or {}
+        enabled = bool(data.get("enabled", True))
+        from .state import ControlState
+
+        ControlState(_daemon_state_path(cfg)).write("enabled", enabled)
+        return jsonify({"ok": True, "enabled": enabled})
+
+    @app.post("/api/send-pending")
+    def api_send_pending():
+        """Send all un-notified new_product events to all configured notifiers."""
+        cfg = load()
+        from .notifiers.feishu import FeishuWebhookNotifier as _F
+        from .notifiers.dingtalk import DingTalkWebhookNotifier as _D
+
+        notifiers = []
+        if cfg.feishu.webhook_url:
+            notifiers.append(_F(cfg.feishu.webhook_url, cfg.feishu.secret, verify_ssl=cfg.feishu.verify_ssl))
+        if cfg.dingtalk.webhook_url:
+            notifiers.append(_D(cfg.dingtalk.webhook_url, cfg.dingtalk.secret, verify_ssl=cfg.dingtalk.verify_ssl))
+        if not notifiers:
+            return jsonify({"ok": False, "error": "no notifier configured"}), 400
+
+        site_id = (request.get_json(silent=True) or {}).get("site") or ""
+        db.init_db(cfg.storage.path)
+        with db.db(cfg.storage.path) as conn:
+            events = db.pending_notify_events(conn, site_id or None, limit=100)
+        if not events:
+            return jsonify({"ok": True, "sent": 0, "message": "没有待发送的新品事件"})
+
+        # 按 site 分组，每个 site 一条聚合消息
+        from collections import defaultdict
+        from .scanner import format_new_products_card, format_new_products_dingtalk, _price
+
+        by_site = defaultdict(list)
+        for ev in events:
+            try:
+                payload = json.loads(ev["payload_json"]) if ev["payload_json"] else {}
+            except Exception:
+                payload = {}
+            product = payload.get("product") or {}
+            by_site[ev["site_id"]].append(product)
+
+        sent_total = 0
+        failures = []
+        for sid, products in by_site.items():
+            site = None
+            for s in cfg.sites:
+                if s.id == sid:
+                    site = s
+                    break
+            if site is None:
+                continue
+            title, md, first_url = format_new_products_card(site, products)
+            dt_title, dt_md, _ = format_new_products_dingtalk(site, products)
+            for n in notifiers:
+                try:
+                    if isinstance(n, _F):
+                        n.send_card(title, md, url=first_url or "")
+                    else:
+                        n.send_markdown(dt_title, dt_md)
+                    sent_total += 1
+                except Exception as exc:
+                    failures.append(f"{sid}/{type(n).__name__}: {exc}")
+        if failures and sent_total == 0:
+            return jsonify({"ok": False, "error": "; ".join(failures)}), 500
+        # 标记已通知
+        with db.db(cfg.storage.path) as conn:
+            db.set_events_notified(conn, [ev["id"] for ev in events])
+        return jsonify({"ok": True, "sent": sent_total, "events": len(events), "failures": failures})
+
+    @app.post("/api/send-pending/ignore-all")
+    def api_ignore_pending():
+        """Mark all pending new_product events as notified (ignore backlog) without sending."""
+        cfg = load()
+        db.init_db(cfg.storage.path)
+        with db.db(cfg.storage.path) as conn:
+            events = db.pending_notify_events(conn, None, limit=100000)
+            if events:
+                db.set_events_notified(conn, [ev["id"] for ev in events])
+        return jsonify({"ok": True, "ignored": len(events) if 'events' in locals() else 0})
+
     # ---------- export ----------
 
     @app.get("/api/export")
@@ -349,6 +450,8 @@ a{color:var(--accent);text-decoration:none}
 <header>
   <h1>📦 独立站商品监控 Agent</h1>
   <span class="sub" id="feishu-state">飞书未配置</span>
+  <span id="daemon-badge" class="badge ok" style="margin-left:8px">监控运行中</span>
+  <button id="daemon-toggle" style="margin-left:4px" class="primary" onclick="toggleDaemon()">暂停监控</button>
 </header>
 <main>
   <div class="banner" id="banner">⚠️ 尚未配置飞书 Webhook，添加后新品才会推送到飞书群。<button class="primary" onclick="goTab('feishu')">去配置</button></div>
@@ -366,7 +469,11 @@ a{color:var(--accent);text-decoration:none}
     <div class="card">
       <div class="row" style="justify-content:space-between">
         <h2>站点列表</h2>
-        <button class="primary" onclick="openAddSite()">＋ 添加站点</button>
+        <div class="row">
+          <button title="把历史积压的新品事件标记为已发送（不推送），用于清理首次建站造成的历史噪音" onclick="ignorePending()">🗑 忽略全部待发</button>
+          <button onclick="sendPending()">📨 发送待发事件</button>
+          <button class="primary" onclick="openAddSite()">＋ 添加站点</button>
+        </div>
       </div>
       <div id="site-list" class="grid" style="margin-top:12px"></div>
     </div>
@@ -480,11 +587,35 @@ function goTab(name){document.querySelectorAll('.tab').forEach(t=>t.classList.to
 async function loadStatus(){
   state=await api('/api/status');
   const fs=state.feishu_configured;
-  $('feishu-state').textContent=fs?'✅ 飞书已配置':'飞书未配置';
-  $('banner').style.display=fs?'none':'block';
+  $('feishu-state').textContent=(fs?'✅ 飞书':'❌ 飞书') + (state.dingtalk_configured?' + ✅ 钉钉':' + ❌ 钉钉');
+  $('banner').style.display=fs||state.dingtalk_configured?'none':'block';
+  renderDaemon();
   renderSites();
   fillSiteSelects();
 }
+function renderDaemon(){
+  const on=state.daemon_enabled;
+  const badge=$('daemon-badge'),btn=$('daemon-toggle');
+  if(badge){badge.textContent=on?'● 监控运行中':'‖ 监控已暂停';
+    badge.className='badge '+(on?'ok':'off');}
+  if(btn){btn.textContent=on?'暂停监控':'开始监控';}
+}
+async function toggleDaemon(){
+  const on=!state.daemon_enabled;
+  const res=await api('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:on})});
+  if(res.ok){toast(on?'监控已开始，将按间隔自动扫描':'监控已暂停（手动扫描仍可用）');loadStatus()}
+  else toast('操作失败');
+}
+async function sendPending(){
+  const res=await api('/api/send-pending',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  if(res.ok){toast(res.events?`已发送 ${res.sent} 条（事件 ${res.events} 条）`:(res.message||'完成'))}
+  else toast('发送失败：'+(res.error||''));
+  loadStatus();}
+async function ignorePending(){
+  if(!confirm('把全部待发送事件标记为已发送（不推送）？用于清理首次建站的历史积压'))return;
+  const res=await api('/api/send-pending/ignore-all',{method:'POST'});
+  toast(res.ok?`已忽略待发事件`:'操作失败');
+  loadStatus();}
 function statusBadge(s){
   if(!s.enabled)return '<span class="badge off">已停用</span>';
   if(s.status==='running')return '<span class="badge running">扫描中</span>';
@@ -500,7 +631,8 @@ function renderSites(){
       <div class="url">${esc(s.base_url)}</div>
       <div class="site-meta"><span>商品 ${s.products}</span><span>间隔 ${s.interval_minutes}分</span></div>
       <div class="row">
-        <button class="primary" onclick="scanSite('${s.id}')">扫描</button>
+        <button class="primary" onclick="scanSite('${s.id}', false)">仅扫描</button>
+        <button onclick="scanSite('${s.id}', true)">扫描并通知</button>
         <button onclick="toggleSite('${s.id}')">${s.enabled?'停用':'启用'}</button>
         <button class="danger" onclick="deleteSite('${s.id}','${esc(s.name)}')">删除</button>
       </div>
@@ -508,10 +640,10 @@ function renderSites(){
     </div>`).join('');
 }
 function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-async function scanSite(id){const btn=event.target;btn.disabled=true;btn.textContent='扫描中…';
-  const res=await api('/api/sites/'+id+'/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-  btn.disabled=false;btn.textContent='扫描';
-  if(res.ok){toast(`扫描完成：${res.products} 个商品，新增 ${res.new} 个`)}else{toast('扫描失败：'+(res.error||'未知'))}
+async function scanSite(id,withNotify=false){const btn=event.target;btn.disabled=true;const old=btn.textContent;btn.textContent='扫描中…';
+  const res=await api('/api/sites/'+id+'/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({notify:withNotify})});
+  btn.disabled=false;btn.textContent=old;
+  if(res.ok){toast(`扫描完成：${res.products} 个商品，新增 ${res.new} 个${withNotify?'，已通知':'（未发送）'}`)}else{toast('扫描失败：'+(res.error||'未知'))}
   loadStatus();}
 async function toggleSite(id){await api('/api/sites/'+id+'/toggle',{method:'POST'});loadStatus();}
 async function deleteSite(id,name){if(!confirm('删除站点 '+name+'？'))return;await api('/api/sites/'+id,{method:'DELETE'});toast('已删除');loadStatus();}
