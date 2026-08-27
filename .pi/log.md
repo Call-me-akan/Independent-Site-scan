@@ -15,3 +15,4 @@
 - [FEATURE] 研究「开箱即用」体验：验证 v0.5.1 release 二进制在全新目录直接 `monitor web` 即可自动生成 31 站配置（实测成功）。
 - [FIX] 数据目录固定化：新增 `data_dir()` 解析—— 优先级 $MONITOR_AGENT_DIR > cwd 已存在 config.yaml（开发兼容）> ~/monitor-agent（打包版固定位置）。storage/export 相对路径改为基于 data_dir 解析，解决「打包版在不同 cwd 下 config 位置漂移、换目录像丢失站点」的问题。新增 tests/test_data_dir.py（5 用例），本地 pytest 31 passed。
 - [TODO] 打包版 config 固定到 ~/monitor-agent 后，需同步提供「一键启动脚本」（macOS .command / Windows .bat）封装 Gatekeeper 解除+启动 web，实现真正的双击即用。
+- [V0.6.0-RELEASE] 固定数据目录已随 v0.6.0 发布。完整「开箱即用」验证（全新 HOME + 直接 web 命令，不执行任何其他命令）：WebUI 站点数 31、daemon 开启、config 自动生成在 $HOME/monitor-agent/、飞书/钉钉 webhook 为空待配、storage/export 解析为固定目录绝对路径不依赖 cwd。✅ 全部通过，后续发版以此为准验证。
