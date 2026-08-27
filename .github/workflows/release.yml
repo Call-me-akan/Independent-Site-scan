@@ -60,8 +60,8 @@ jobs:
       - name: Create zip
         shell: bash
         run: |
-          chmod +x scripts/build-release-zip.sh
-          ./scripts/build-release-zip.sh "${{ matrix.zip_name }}.zip" release
+          python3 scripts/makezip.py "${{ matrix.zip_name }}.zip" release
+          ls -la "${{ matrix.zip_name }}.zip"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
