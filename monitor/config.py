@@ -24,17 +24,25 @@ def data_dir() -> Path:
 
     Priority:
       1. $MONITOR_AGENT_DIR
-      2. ./config.yaml if it already exists next to the working dir (legacy/dev)
-      3. $HOME/monitor-agent  (fixed location for packaged binaries)
+      2. PyInstaller packaged binary -> $HOME/monitor-agent   (fixed, ignores cwd)
+      3. source/dev run with existing ./config.yaml -> cwd      (compat)
+      4. otherwise -> $HOME/monitor-agent
 
-    A fixed location means users can run the packaged binary from anywhere
-    and always see the same sites + webhooks (no 'config disappeared' issue).
+    Packaged binaries ALWAYS use the fixed location so users see the same
+    sites/webhooks no matter where they run the binary from (fixes the
+    'config in Downloads vs elsewhere' confusion).
     """
     import os as _os
+    import sys as _sys
 
     env = _os.environ.get("MONITOR_AGENT_DIR", "").strip()
     if env:
         return Path(env).expanduser().resolve()
+    packaged = getattr(_sys, "frozen", False)
+    if packaged:
+        # Windows 直接读用户目录(USERPROFILE)，macOS/Linux 用 HOME
+        home = Path(_os.environ.get("USERPROFILE") or _os.path.expanduser("~"))
+        return (home / "monitor-agent").resolve()
     old = Path("config.yaml")
     if old.exists():
         # 开发/迁移场景：工作目录已有 config 就继续用它

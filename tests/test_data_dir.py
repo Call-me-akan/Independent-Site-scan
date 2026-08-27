@@ -21,6 +21,16 @@ def test_data_dir_env_override(monkeypatch, tmp_path):
     assert str(data_dir()).startswith(str((tmp_path / "custom").resolve()))
 
 
+def test_data_dir_packaged_ignores_cwd(monkeypatch, tmp_path):
+    """PyInstaller frozen binary must use fixed ~/monitor-agent even if cwd has config.yaml."""
+    (tmp_path / "config.yaml").write_text("sites: []\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.frozen", True, raising=False)
+    d = data_dir()
+    assert "monitor-agent" in str(d)  # 固定目录，忽略 cwd
+    assert str(d) != str(Path.cwd().resolve())
+
+
 def test_parse_config_resolves_relative_paths_to_data_dir(monkeypatch, tmp_path):
     monkeypatch.setenv("MONITOR_AGENT_DIR", str(tmp_path / "agent"))
     cfg = parse_config({"sites": [], "storage": {"path": "./data/monitor.db"}, "export": {"dir": "./exports"}})
