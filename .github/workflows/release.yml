@@ -18,14 +18,20 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            artifact_name: monitor-linux
+            binary_name: monitor-linux
             binary_path: dist/monitor
+            launch_script: ""
+            zip_name: monitor-linux
           - os: macos-latest
-            artifact_name: monitor-macos
+            binary_name: monitor-macos
             binary_path: dist/monitor
+            launch_script: scripts/start-monitor.command
+            zip_name: monitor-macos
           - os: windows-latest
-            artifact_name: monitor-windows.exe
+            binary_name: monitor-windows.exe
             binary_path: dist/monitor.exe
+            launch_script: scripts/start-monitor.bat
+            zip_name: monitor-windows
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -40,16 +46,28 @@ jobs:
         run: pytest -q
       - name: Build executable
         run: pyinstaller --onefile --name monitor monitor/__main__.py
-      - name: Rename artifact
+      - name: Assemble release folder
         shell: bash
         run: |
           mkdir -p release
-          cp "${{ matrix.binary_path }}" "release/${{ matrix.artifact_name }}"
+          cp "${{ matrix.binary_path }}" "release/${{ matrix.binary_name }}"
+          if [ -n "${{ matrix.launch_script }}" ] && [ -f "${{ matrix.launch_script }}" ]; then
+            cp "${{ matrix.launch_script }}" "release/"
+            echo "已附带启动脚本: ${{ matrix.launch_script }}"
+          fi
+          cp README.md release/README.md 2>/dev/null || true
+          ls -la release/
+      - name: Create zip
+        shell: bash
+        run: |
+          cd release
+          zip -r "../${{ matrix.zip_name }}.zip" .
+          cd ..
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: release/${{ matrix.artifact_name }}
+          name: ${{ matrix.zip_name }}.zip
+          path: ${{ matrix.zip_name }}.zip
 
   publish:
     needs: build
@@ -60,6 +78,7 @@ jobs:
         with:
           path: release
           merge-multiple: true
+      - run: ls -la release/
       - uses: softprops/action-gh-release@v2
         with:
           files: release/*
