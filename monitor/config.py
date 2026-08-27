@@ -12,6 +12,47 @@ except ImportError as exc:  # pragma: no cover
 
 DEFAULT_CONFIG_PATH = Path("config.yaml")
 
+try:
+    # MONITOR_AGENT_DIR 环境变量可覆盖固定数据目录（打包版优先使用）
+    _data_dir = Path(os.environ.get("MONITOR_AGENT_DIR", "")).expanduser() if os.environ.get("MONITOR_AGENT_DIR") else None
+except NameError:
+    _data_dir = None
+
+
+def data_dir() -> Path:
+    """Resolve where config/data live.
+
+    Priority:
+      1. $MONITOR_AGENT_DIR
+      2. ./config.yaml if it already exists next to the working dir (legacy/dev)
+      3. $HOME/monitor-agent  (fixed location for packaged binaries)
+
+    A fixed location means users can run the packaged binary from anywhere
+    and always see the same sites + webhooks (no 'config disappeared' issue).
+    """
+    import os as _os
+
+    env = _os.environ.get("MONITOR_AGENT_DIR", "").strip()
+    if env:
+        return Path(env).expanduser().resolve()
+    old = Path("config.yaml")
+    if old.exists():
+        # 开发/迁移场景：工作目录已有 config 就继续用它
+        return Path.cwd().resolve()
+    return (Path.home() / "monitor-agent").resolve()
+
+
+def config_path() -> Path:
+    return data_dir() / "config.yaml"
+
+
+def storage_path() -> Path:
+    return data_dir() / "data" / "monitor.db"
+
+
+def export_path() -> Path:
+    return data_dir() / "exports"
+
 DEFAULT_CONFIG_YAML = """sites:
   - id: viqzes
     name: viqzes
@@ -513,13 +554,15 @@ class AppConfig:
     export: ExportConfig = field(default_factory=ExportConfig)
 
 
-def init_config(path: Path = DEFAULT_CONFIG_PATH) -> Path:
-    """Create config from template, or merge preset sites into an existing config.
+def init_config(path: Path | None = None) -> Path:
+    """Create/merge config at the resolved path (default: fixed data dir).
 
     - If config doesn't exist: write the full preset template (31 sites + empty webhooks).
     - If config exists: merge the preset sites by id — any preset site the user
       doesn't already have gets appended; user's own sites/webhooks are untouched.
     """
+    if path is None:
+        path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
         path.write_text(DEFAULT_CONFIG_YAML, encoding="utf-8")
@@ -549,14 +592,18 @@ def init_config(path: Path = DEFAULT_CONFIG_PATH) -> Path:
     return path
 
 
-def load_config(path: Path = DEFAULT_CONFIG_PATH) -> AppConfig:
+def load_config(path: Path | None = None) -> AppConfig:
+    if path is None:
+        path = config_path()
     if not path.exists():
         raise SystemExit(f"Config not found: {path}. Run: python -m monitor.cli init")
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return parse_config(raw)
 
 
-def save_config(config: AppConfig, path: Path = DEFAULT_CONFIG_PATH) -> None:
+def save_config(config: AppConfig, path: Path | None = None) -> None:
+    if path is None:
+        path = config_path()
     raw = {
         "sites": [site.__dict__ for site in config.sites],
         "feishu": config.feishu.__dict__,
@@ -569,12 +616,19 @@ def save_config(config: AppConfig, path: Path = DEFAULT_CONFIG_PATH) -> None:
 
 def parse_config(raw: dict[str, Any]) -> AppConfig:
     sites = [SiteConfig(**site) for site in raw.get("sites", [])]
+    base = data_dir()
+    storage_raw = dict(raw.get("storage") or {})
+    export_raw = dict(raw.get("export") or {})
+    if not (storage_raw.get("path") or "").startswith(("/", "~", "$")):
+        storage_raw["path"] = str(base / (storage_raw.get("path") or "data/monitor.db"))
+    if not (export_raw.get("dir") or "").startswith(("/", "~", "$")):
+        export_raw["dir"] = str(base / (export_raw.get("dir") or "exports"))
     return AppConfig(
         sites=sites,
         feishu=FeishuConfig(**(raw.get("feishu") or {})),
         dingtalk=DingTalkConfig(**(raw.get("dingtalk") or {})),
-        storage=StorageConfig(**(raw.get("storage") or {})),
-        export=ExportConfig(**(raw.get("export") or {})),
+        storage=StorageConfig(**storage_raw),
+        export=ExportConfig(**export_raw),
     )
 
 
