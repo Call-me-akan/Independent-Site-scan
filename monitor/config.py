@@ -514,10 +514,38 @@ class AppConfig:
 
 
 def init_config(path: Path = DEFAULT_CONFIG_PATH) -> Path:
-    if path.exists():
-        return path
+    """Create config from template, or merge preset sites into an existing config.
+
+    - If config doesn't exist: write the full preset template (31 sites + empty webhooks).
+    - If config exists: merge the preset sites by id — any preset site the user
+      doesn't already have gets appended; user's own sites/webhooks are untouched.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(DEFAULT_CONFIG_YAML, encoding="utf-8")
+    if not path.exists():
+        path.write_text(DEFAULT_CONFIG_YAML, encoding="utf-8")
+        return path
+    # Merge: load existing, add preset sites that are missing
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        existing_ids = {str(s.get("id")) for s in raw.get("sites") or []}
+        template = yaml.safe_load(DEFAULT_CONFIG_YAML) or {}
+        added = []
+        for site in template.get("sites") or []:
+            if str(site.get("id")) not in existing_ids:
+                raw.setdefault("sites", []).append(site)
+                existing_ids.add(str(site.get("id")))
+                added.append(site.get("id"))
+        if added:
+            path.write_text(yaml.safe_dump(raw, allow_unicode=True, sort_keys=False), encoding="utf-8")
+            print(f"[init_config] 已合并预设站点: {', '.join(added)}")
+        else:
+            print("[init_config] 站点已是最新，无需合并")
+    except yaml.YAMLError:
+        # 旧配置损坏，备份后重建
+        backup = path.with_suffix(path.suffix + ".bad")
+        path.rename(backup)
+        path.write_text(DEFAULT_CONFIG_YAML, encoding="utf-8")
+        print(f"[init_config] 配置损坏，备份为 {backup.name} 并重建")
     return path
 
 

@@ -1,0 +1,12 @@
+# 开发日志 (Development Log)
+
+> 规则：每次改动/验证/发版，追加一条记录。格式：`- [日期] 类型 | 内容 | 验证状态`
+
+## 2026-08-27
+
+- [FIX] 修复 init_config 升级时只写不合并模板站点的问题。现象：用户在运行目录已有旧 config.yaml（仅 example）时，预设的 31 站不生效。根因：`init_config` 仅当文件不存在时才写模板，已存在直接 return。修复：改为「合并」——按站点 id 去重，把模板中缺失的站点合并进现有 config。
+- [TEST] 新增 tests/test_config_merge.py（3 个用例）：首次运行写满模板 / 已有 config 合并预设站点且不动 webhook / 幂等。本地 pytest 26 passed。
+- [VERIFY] 真实模拟：旧 config 仅 example（+自定义 webhook）→ init_config 后 32 站（example+31 预设），webhook 保留。
+- [FIX] 确认 webhook 无缓存：config.yaml 实时读取，用户本地 31 站 + 飞书 + 钉钉配置完整保留。
+- [PROCESS] 用户要求规范流程：开发分支 → 本地 pytest → 合 main → CI 通过 → 才打 tag 发版；每步记录本文件。本次修复改走 `fix/init-merge` 分支。
+- [RELEASE] v0.5.0 已发布（预设站点模板 + 扫描/发送解耦 + daemon 总开关）。
