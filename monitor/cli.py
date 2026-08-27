@@ -9,6 +9,7 @@ from .config import AppConfig, SiteConfig, get_site, init_config, load_config, s
 
 from .exporters import export_products
 from .notifiers.feishu import FeishuWebhookNotifier
+from .notifiers.dingtalk import DingTalkWebhookNotifier
 from .scanner import scan_site
 
 
@@ -44,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", help="show scan status")
     sub.add_parser("list-sites", help="list configured sites")
     sub.add_parser("test-feishu", help="send a Feishu test message")
+    sub.add_parser("test-dingtalk", help="send a DingTalk test message")
 
     web = sub.add_parser("web", help="start local WebUI")
     web.add_argument("--port", type=int, default=8321)
@@ -139,6 +141,19 @@ def main(argv: list[str] | None = None) -> int:
             url_text="打开站点",
         )
         print("Feishu text + card test sent")
+        return 0
+
+    if args.command == "test-dingtalk":
+        notifier = DingTalkWebhookNotifier(config.dingtalk.webhook_url, config.dingtalk.secret, verify_ssl=config.dingtalk.verify_ssl)
+        if not notifier.enabled():
+            print("DingTalk webhook_url is empty in config.yaml")
+            return 2
+        notifier.send_text("独立站商品监控 Agent 测试消息")
+        notifier.send_markdown(
+            "独立站商品监控 Agent 测试",
+            "**这是钉钉 markdown 测试**\n\n✅ 文本与 markdown 消息都已支持\n🔥 新品通知将使用此样式并带商品图",
+        )
+        print("DingTalk text + markdown test sent")
         return 0
 
     parser.print_help()

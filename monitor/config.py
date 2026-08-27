@@ -31,6 +31,12 @@ DEFAULT_CONFIG_YAML = """sites:
 feishu:
   webhook_url: ""
   secret: ""
+  verify_ssl: true
+
+dingtalk:
+  webhook_url: ""
+  secret: ""
+  verify_ssl: true
 
 storage:
   path: ./data/monitor.db
@@ -62,6 +68,13 @@ class FeishuConfig:
 
 
 @dataclass
+class DingTalkConfig:
+    webhook_url: str = ""
+    secret: str = ""
+    verify_ssl: bool = True
+
+
+@dataclass
 class StorageConfig:
     path: str = "./data/monitor.db"
 
@@ -75,6 +88,7 @@ class ExportConfig:
 class AppConfig:
     sites: list[SiteConfig]
     feishu: FeishuConfig = field(default_factory=FeishuConfig)
+    dingtalk: DingTalkConfig = field(default_factory=DingTalkConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
 
@@ -98,6 +112,7 @@ def save_config(config: AppConfig, path: Path = DEFAULT_CONFIG_PATH) -> None:
     raw = {
         "sites": [site.__dict__ for site in config.sites],
         "feishu": config.feishu.__dict__,
+        "dingtalk": config.dingtalk.__dict__,
         "storage": config.storage.__dict__,
         "export": config.export.__dict__,
     }
@@ -109,6 +124,7 @@ def parse_config(raw: dict[str, Any]) -> AppConfig:
     return AppConfig(
         sites=sites,
         feishu=FeishuConfig(**(raw.get("feishu") or {})),
+        dingtalk=DingTalkConfig(**(raw.get("dingtalk") or {})),
         storage=StorageConfig(**(raw.get("storage") or {})),
         export=ExportConfig(**(raw.get("export") or {})),
     )

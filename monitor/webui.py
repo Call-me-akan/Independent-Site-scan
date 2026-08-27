@@ -13,6 +13,7 @@ from . import db
 from .config import get_site, load_config, save_config
 from .exporters import export_products
 from .notifiers.feishu import FeishuWebhookNotifier
+from .notifiers.dingtalk import DingTalkWebhookNotifier
 
 try:
     from flask import Flask, Response, jsonify, request, send_file
@@ -214,6 +215,43 @@ def create_app(config_path: str = "config.yaml") -> Flask:
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
+    # ---------- dingtalk ----------
+
+    @app.get("/api/dingtalk")
+    def api_dingtalk_get():
+        cfg = load()
+        return jsonify({
+            "configured": bool(cfg.dingtalk.webhook_url),
+            "webhook_hint": (cfg.dingtalk.webhook_url[:40] + "…") if cfg.dingtalk.webhook_url else "",
+            "has_secret": bool(cfg.dingtalk.secret),
+        })
+
+    @app.post("/api/dingtalk")
+    def api_dingtalk_set():
+        cfg = load()
+        data = request.get_json(force=True)
+        if "webhook_url" in data:
+            cfg.dingtalk.webhook_url = str(data.get("webhook_url") or "").strip()
+        if "secret" in data:
+            cfg.dingtalk.secret = str(data.get("secret") or "").strip()
+        save_config(cfg, Path(config_path))
+        return jsonify({"ok": True})
+
+    @app.post("/api/dingtalk/test")
+    def api_dingtalk_test():
+        cfg = load()
+        notifier = DingTalkWebhookNotifier(cfg.dingtalk.webhook_url, cfg.dingtalk.secret, verify_ssl=cfg.dingtalk.verify_ssl)
+        if not notifier.enabled():
+            return jsonify({"ok": False, "error": "webhook_url is empty"}), 400
+        try:
+            notifier.send_markdown(
+                "独立站商品监控 Agent WebUI 测试",
+                "**钉钉消息测试**\n\n✅ 连接正常，新品通知将使用此样式\n![商品图示例](https://cdn.shopify.com/s/files/1/0791/7541/5321/files/1.png)",
+            )
+            return jsonify({"ok": True})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
     # ---------- export ----------
 
     @app.get("/api/export")
@@ -320,6 +358,7 @@ a{color:var(--accent);text-decoration:none}
     <div class="tab" data-tab="products" onclick="goTab('products')">商品</div>
     <div class="tab" data-tab="events" onclick="goTab('events')">事件</div>
     <div class="tab" data-tab="feishu" onclick="goTab('feishu')">飞书设置</div>
+    <div class="tab" data-tab="dingtalk" onclick="goTab('dingtalk')">钉钉设置</div>
   </div>
 
   <!-- overview -->
@@ -383,6 +422,23 @@ a{color:var(--accent);text-decoration:none}
         <div class="row">
           <button class="primary" onclick="saveFeishu()">保存</button>
           <button onclick="testFeishu()">发送测试消息</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- dingtalk -->
+  <div class="panel" id="panel-dingtalk">
+    <div class="card">
+      <h2>钉钉 Webhook 设置</h2>
+      <div style="display:flex;flex-direction:column;gap:10px;max-width:520px">
+        <div><label style="display:block;margin-bottom:4px;color:var(--muted)">Webhook URL</label>
+          <input id="dt-url" style="width:100%" placeholder="https://oapi.dingtalk.com/robot/send?access_token=xxx"></div>
+        <div><label style="display:block;margin-bottom:4px;color:var(--muted)">加签密钥 secret（可选）</label>
+          <input id="dt-secret" style="width:100%" placeholder="SEC..."></div>
+        <div class="row">
+          <button class="primary" onclick="saveDingtalk()">保存</button>
+          <button onclick="testDingtalk()">发送测试消息</button>
         </div>
       </div>
     </div>
@@ -509,9 +565,20 @@ async function saveFeishu(){
 async function testFeishu(){
   const res=await api('/api/feishu/test',{method:'POST'});
   toast(res.ok?'✅ 测试消息已发送':'❌ '+(res.error||'失败'));}
+async function loadDingtalk(){
+  const res=await api('/api/dingtalk');
+  if(res.configured){$('dt-url').value=res.webhook_hint.replace('…','');$('dt-url').setAttribute('placeholder','已配置，输入新值可覆盖');}
+}
+async function saveDingtalk(){
+  const body={webhook_url:$('dt-url').value.trim(),secret:$('dt-secret').value.trim()};
+  const res=await api('/api/dingtalk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(res.ok){toast('钉钉配置已保存');loadStatus()}}
+async function testDingtalk(){
+  const res=await api('/api/dingtalk/test',{method:'POST'});
+  toast(res.ok?'✅ 测试消息已发送':'❌ '+(res.error||'失败'));}
 $('prod-site').addEventListener('change',loadProducts);
 $('prod-q').addEventListener('keydown',e=>{if(e.key==='Enter')loadProducts()});
-loadStatus();loadFeishu();
+loadStatus();loadFeishu();loadDingtalk();
 </script>
 </body>
 </html>

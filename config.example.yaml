@@ -16,6 +16,12 @@ sites:
 feishu:
   webhook_url: ""
   secret: ""
+  verify_ssl: true
+
+dingtalk:
+  webhook_url: ""
+  secret: ""
+  verify_ssl: true
 
 storage:
   path: ./data/monitor.db

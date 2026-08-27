@@ -59,9 +59,11 @@ python -m monitor init
 
 生成 `config.yaml` 和数据库 `data/monitor.db`。
 
-### 2. 配置飞书通知（可选但推荐）
+### 2. 配置通知（可选但推荐）
 
-在飞书群中添加**自定义机器人**，拿到 Webhook 地址（详见[飞书官方指南](https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot)），填入 `config.yaml`：
+支持 **飞书** 和 **钉钉** 两个机器人（可同时启用），只需其中之一也可。
+
+**飞书**：在飞书群添加「自定义机器人」，拿到 Webhook，填入 `config.yaml`：
 
 ```yaml
 feishu:
@@ -69,10 +71,19 @@ feishu:
   secret: ""            # 若开启签名校验则填写
 ```
 
+**钉钉**：在钉钉群添加「自定义机器人」（安全设置选加签），填入 `config.yaml`：
+
+```yaml
+dingtalk:
+  webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=xxxx"
+  secret: "SECxxx"      # 加签密钥
+```
+
 测试通知：
 
 ```bash
 python -m monitor test-feishu
+python -m monitor test-dingtalk
 ```
 
 ### 3. 添加站点
@@ -115,9 +126,11 @@ python -m monitor web --port 9000
 - **事件**：最近的新品 / 错误记录
 - **飞书设置**：配置 Webhook 并发测试消息
 
-## 飞书通知格式
+## 通知格式
 
-新品通知使用**交互卡片**（比纯文本更清晰）：
+新品通知同时支持飞书卡片与钉钉 markdown：
+
+**飞书（交互卡片）：**
 
 ```text
 ┌─ [viqzes] 发现 3 个新品（最新 3 个） ─────┐
@@ -129,7 +142,19 @@ python -m monitor web --port 9000
 └──────────────────────────────────────────┘
 ```
 
-> 注：飞书自定义机器人 Webhook 卡片不支持内嵌远程图片（需要图片上传接口的 `image_key`），因此商品图片 URL 以文字形式展示。
+**钉钉（markdown，支持商品缩略图）：**
+
+```text
+[viqzes] 发现 3 个新品（最新 3 个）
+**商品标题**
+💰 9.99 · 🆕 2026-08-27
+![商品缩略图](https://cdn.shopify.com/...)
+[查看商品](https://viqzes.com/products/xxx)
+---
+（下一个商品）
+```
+
+> 注：飞书自定义机器人卡片不支持内嵌远程图片（需 image_key），商品图以 URL 文字展示；钉钉 markdown 原生支持远程图片，会直接渲染缩略图。
 
 ## CLI 命令
 
@@ -144,6 +169,7 @@ python -m monitor web --port 9000
 | `monitor status` | 查看所有站点状态 |
 | `monitor export --site <id> --format csv/json` | 导出商品数据 |
 | `monitor test-feishu` | 发送飞书测试消息 |
+| `monitor test-dingtalk` | 发送钉钉测试消息 |
 
 ## 本地常驻运行
 
@@ -213,8 +239,8 @@ docker run --rm -it \
 **Q：扫描时说 URL 返回 404？**
 该站可能没有开放 `/products.json`。Shopify 站都用它；其他独立站请改用 `embedded_page_products` 适配器（`--source-url` 指向商品列表页）。
 
-**Q：飞书没收到消息？**
-1. 先 `python -m monitor test-feishu`，群里有消息则链路正常
+**Q：飞书/钉钉没收到消息？**
+1. 先 `python -m monitor test-feishu` / `test-dingtalk`，群里有消息则链路正常
 2. 首次扫描（建基线）不会推送，只有之后的新品才推送
 3. 若在「自定义关键词」安全校验，消息需包含关键词才会被转发
 

@@ -7,6 +7,7 @@ from .adapters.base import AdapterError
 from .adapters.factory import get_adapter
 from .config import AppConfig, SiteConfig
 from .notifiers.feishu import FeishuWebhookNotifier, NotifyError
+from .notifiers.dingtalk import DingTalkWebhookNotifier
 
 
 @dataclass
@@ -19,9 +20,19 @@ class ScanResult:
     notified: bool
 
 
+def build_notifiers(config: AppConfig) -> list:
+    """Build all enabled notifiers (Feishu + DingTalk)."""
+    notifiers = []
+    if config.feishu.webhook_url:
+        notifiers.append(FeishuWebhookNotifier(config.feishu.webhook_url, config.feishu.secret, verify_ssl=config.feishu.verify_ssl))
+    if config.dingtalk.webhook_url:
+        notifiers.append(DingTalkWebhookNotifier(config.dingtalk.webhook_url, config.dingtalk.secret, verify_ssl=config.dingtalk.verify_ssl))
+    return notifiers
+
+
 def scan_site(config: AppConfig, site: SiteConfig, notify: bool = True, full: bool | None = None, resume: bool = False, from_page: int = 1) -> ScanResult:
     db.init_db(config.storage.path)
-    notifier = FeishuWebhookNotifier(config.feishu.webhook_url, config.feishu.secret, verify_ssl=config.feishu.verify_ssl)
+    notifiers = build_notifiers(config)
     with db.db(config.storage.path) as conn:
         db.upsert_site(conn, site)
         baseline_done = db.baseline_complete(conn, site.id)
@@ -58,13 +69,21 @@ def scan_site(config: AppConfig, site: SiteConfig, notify: bool = True, full: bo
                 conn.commit()
             did_notify = False
             if should_notify_new and all_new_products:
-                try:
-                    title, markdown, first_url = format_new_products_card(site, all_new_products)
-                    notifier.send_card(title, markdown, url=first_url or "")
+                successes = 0
+                title, markdown, _ = format_new_products_card(site, all_new_products)
+                dt_title, dt_markdown, first_url = format_new_products_dingtalk(site, all_new_products)
+                for n in notifiers:
+                    try:
+                        if isinstance(n, FeishuWebhookNotifier):
+                            n.send_card(title, markdown, url=first_url or "")
+                        else:
+                            n.send_markdown(dt_title, dt_markdown)
+                        successes += 1
+                    except NotifyError as exc:
+                        db.insert_event(conn, site.id, "notify_error", None, f"{type(n).__name__} notify failed", {"error": str(exc)}, notified=False)
+                if successes:
                     db.set_events_notified(conn, event_ids)
                     did_notify = True
-                except NotifyError as exc:
-                    db.insert_event(conn, site.id, "notify_error", None, "Feishu notify failed", {"error": str(exc)}, notified=False)
             if scan_type == "full" and not baseline_done:
                 db.set_baseline_complete(conn, site.id, True)
                 db.reset_scan_cursor(conn, site.id)
@@ -74,10 +93,11 @@ def scan_site(config: AppConfig, site: SiteConfig, notify: bool = True, full: bo
             db.finish_scan(conn, run_id, "failed", total_products, new_total, str(exc))
             db.insert_event(conn, site.id, "scan_error", None, "Scan failed", {"error": str(exc)}, notified=False)
             if notify and site.notify.get("error", True):
-                try:
-                    notifier.send_text(f"[{site.name}] 扫描失败\n{exc}")
-                except NotifyError:
-                    pass
+                for n in notifiers:
+                    try:
+                        n.send_text(f"[{site.name}] 扫描失败\n{exc}")
+                    except NotifyError:
+                        pass
             raise
 
 
@@ -116,6 +136,37 @@ def format_new_products_card(site: SiteConfig, products: list[dict]) -> tuple[st
         if url:
             lines.append(f"🔗 {url}")
         lines.append("")
+    if not shown:
+        lines.append("暂无商品信息")
+    summary = f"发现 {len(products)} 个新品（最新 {len(shown)} 个）"
+    title = f"[{site.name}] {summary}"
+    markdown = "\n".join(lines).strip()
+    return title, markdown, first_url
+
+
+def format_new_products_dingtalk(site: SiteConfig, products: list[dict]) -> tuple[str, str, str]:
+    """Return (dingtalk_title, dingtalk_markdown, first_product_url).
+
+    DingTalk markdown natively renders remote images via ![alt](url), so we
+    embed the product image directly (Feishu cards can't do this).
+    """
+    shown = products[:8]
+    lines = []
+    first_url = ""
+    for product in shown:
+        price = _price(product)
+        published = product.get('published_at') or product.get('created_at') or ''
+        img = (product.get('image') or '').strip()
+        url = (product.get('url') or '').strip()
+        if not first_url and url:
+            first_url = url
+        lines.append(f"**{product.get('title', '')}**")
+        lines.append(f"💰 {price}  ·  🆕 {published[:16]}")
+        if img and img.startswith('http'):
+            lines.append(f"![]({img})")
+        if url:
+            lines.append(f"[查看商品]({url})")
+        lines.append("---")
     if not shown:
         lines.append("暂无商品信息")
     summary = f"发现 {len(products)} 个新品（最新 {len(shown)} 个）"
