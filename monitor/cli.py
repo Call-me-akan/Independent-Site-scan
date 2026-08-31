@@ -47,6 +47,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("list-sites", help="list configured sites")
     sub.add_parser("test-feishu", help="send a Feishu test message")
     sub.add_parser("test-dingtalk", help="send a DingTalk test message")
+    sub.add_parser("update-check", help="check for a new release on GitHub")
 
     web = sub.add_parser("web", help="start local WebUI")
     web.add_argument("--port", type=int, default=8321)
@@ -164,6 +165,18 @@ def main(argv: list[str] | None = None) -> int:
             "**这是钉钉 markdown 测试**\n\n✅ 文本与 markdown 消息都已支持\n🔥 新品通知将使用此样式并带商品图",
         )
         print("DingTalk text + markdown test sent")
+        return 0
+
+    if args.command == "update-check":
+        from .config import data_dir as _dd
+        from .updater import check_for_update
+
+        info = check_for_update(_dd(), force=True)
+        if info.has_update:
+            print(f"发现新版本: v{info.latest} (当前 v{info.current})")
+            print(f"下载: {info.url}")
+        else:
+            print(f"当前已是最新版本 v{info.current}")
         return 0
 
     parser.print_help()
