@@ -20,3 +20,5 @@
 - [FIX] release zip 踩坑两轮：① Windows runner 无 zip 命令→改 python zipfile；② heredoc (<<PYEOF) 在 Actions runner 挂起→改独立 makezip.py，release.yml 直接 python3 scripts/makezip.py。已随 v0.6.1 发布，macOS zip 已验证含 start-monitor.command。
 - [FIX] 「开箱即用」最终 bug：data_dir() 的 cwd-优先逻辑导致打包版例外——用户在 Downloads 残留旧 config.yaml 时，新程序会读那份(仅 example)而绕开固定目录。修复：PyInstaller 打包版(frozen)一律用 $HOME/monitor-agent 固定目录忽略 cwd；仅源码开发模式保留 cwd 兼容。新增 test_data_dir_packaged_ignores_cwd，本地 pytest 32 passed。将随 v0.6.2 发布。
 - [V0.6.2-RELEASE-✅] 已发布并完整验证：cwd 放旧 example config 的最坏场景下，打包版仍用固定目录、WebUI 31 站齐全、webhook 空待配、zip 含 start-monitor.command。用户操作路径：下载 zip → 解压 → 双击 start-monitor.command → 浏览器自动打开 → 填 webhook 即用。
+- [FEATURE] 日志落盘：新增 monitor/logger.py（Tee 双输出），所有命令自动把 stdout/stderr 镜像到 <data_dir>/logs/monitor.log（固定目录，5MB 轮转）。解决了打包版在别人机器上无法排障的问题——日志位置固定为 ~/monitor-agent/logs/monitor.log。将随 v0.6.3 发布。
+- [DIAG] 用户问「外站为何之前稳定现在不稳」：日志 5 段分析，失败呈全站同步波次（51 波），根因是本机代理 DNS 劫持（198.18.x.x Fake IP）周期性抽风，非站点问题。解法：①代理规则直连/换节点 ②代码侧加重试。重试机制待实施。

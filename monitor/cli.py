@@ -53,6 +53,14 @@ def main(argv: list[str] | None = None) -> int:
     web.add_argument("--no-browser", action="store_true")
 
     args = parser.parse_args(argv)
+    # 所有命令都启用日志落盘（固定位置，便于在别人机器上排障）
+    try:
+        from .config import data_dir as _data_dir
+        from .logger import setup_file_logging
+
+        setup_file_logging(_data_dir())
+    except Exception:
+        pass  # 日志初始化失败不阻塞主流程
     if args.command == "web":
         from .webui import run_web
         from .config import config_path as _cfg_path
