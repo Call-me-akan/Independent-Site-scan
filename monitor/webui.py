@@ -37,6 +37,15 @@ def _read_daemon_state(cfg) -> bool:
     return bool(ControlState(_daemon_state_path(cfg)).read("enabled", True))
 
 
+def _check_update(cfg) -> dict:
+    from .updater import check_for_update
+
+    try:
+        return check_for_update(cfg.storage.path and str(Path(cfg.storage.path).parent)).to_dict()
+    except Exception:
+        return {"current": "", "latest": "", "has_update": False, "url": "", "checked_at": 0.0}
+
+
 def create_app(config_path: str = "config.yaml") -> Flask:
     app = Flask(__name__)
     app.config["CONFIG_PATH"] = config_path
@@ -74,6 +83,7 @@ def create_app(config_path: str = "config.yaml") -> Flask:
             "feishu_configured": bool(cfg.feishu.webhook_url),
             "dingtalk_configured": bool(cfg.dingtalk.webhook_url),
             "daemon_enabled": _read_daemon_state(cfg),
+            "update": _check_update(cfg),
         })
 
     # ---------- site management ----------
@@ -268,6 +278,18 @@ def create_app(config_path: str = "config.yaml") -> Flask:
 
     # ---------- control ----------
 
+    @app.post("/api/update-check")
+    def api_update_check():
+        """Force a fresh update check against GitHub."""
+        from .updater import check_for_update
+
+        cfg = load()
+        try:
+            info = check_for_update(Path(cfg.storage.path).parent, force=True)
+            return jsonify(info.to_dict())
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
     @app.post("/api/control")
     def api_control():
         """Toggle daemon: {"enabled": true/false}."""
@@ -452,7 +474,12 @@ a{color:var(--accent);text-decoration:none}
   <span class="sub" id="feishu-state">飞书未配置</span>
   <span id="daemon-badge" class="badge ok" style="margin-left:8px">监控运行中</span>
   <button id="daemon-toggle" style="margin-left:4px" class="primary" onclick="toggleDaemon()">暂停监控</button>
+  <button id="update-check-btn" style="margin-left:4px" onclick="forceUpdateCheck()">检查更新</button>
 </header>
+<div id="update-banner" style="display:none;background:#e8f1fb;border:1px solid #9cc3e8;color:#0b5cad;padding:8px 24px;font-size:13px">
+  🎉 发现新版本 <b id="update-ver"></b>！<a id="update-link" href="#" target="_blank" style="color:#0b5cad;font-weight:600">去下载</a>
+  <span style="color:#7b8794">（当前 v<span id="current-ver"></span>）</span>
+</div>
 <main>
   <div class="banner" id="banner">⚠️ 尚未配置飞书 Webhook，添加后新品才会推送到飞书群。<button class="primary" onclick="goTab('feishu')">去配置</button></div>
 
@@ -590,8 +617,32 @@ async function loadStatus(){
   $('feishu-state').textContent=(fs?'✅ 飞书':'❌ 飞书') + (state.dingtalk_configured?' + ✅ 钉钉':' + ❌ 钉钉');
   $('banner').style.display=fs||state.dingtalk_configured?'none':'block';
   renderDaemon();
+  renderUpdate();
   renderSites();
   fillSiteSelects();
+}
+function renderUpdate(){
+  const u=state.update||{};
+  const banner=$('update-banner');
+  if(!banner)return;
+  if(u.has_update&&u.latest&&u.current&&u.latest!==u.current){
+    $('update-ver').textContent='v'+u.latest;
+    $('current-ver').textContent=u.current;
+    if(u.url)$('update-link').href=u.url;
+    banner.style.display='block';
+  } else {
+    banner.style.display='none';
+  }
+}
+async function forceUpdateCheck(){
+  const btn=$('update-check-btn');
+  if(btn){btn.disabled=true;btn.textContent='检查中…'}
+  try{
+    const res=await api('/api/update-check',{method:'POST'});
+    if(res&&res.has_update){toast('发现新版本 v'+res.latest);loadStatus()}
+    else toast('当前已是最新版本 v'+(res&&res.current||''));
+  }catch(e){toast('检查失败（可能网络不通）')}
+  if(btn){btn.disabled=false;btn.textContent='检查更新'}
 }
 function renderDaemon(){
   const on=state.daemon_enabled;
