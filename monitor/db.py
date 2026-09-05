@@ -218,20 +218,23 @@ def set_events_notified(conn: sqlite3.Connection, event_ids: list[int]) -> None:
     conn.execute(f"UPDATE events SET notified = 1 WHERE id IN ({placeholders})", event_ids)
 
 
-def pending_notify_events(conn: sqlite3.Connection, site_id: str | None = None, limit: int = 200) -> list[sqlite3.Row]:
-    """Return new_product events that haven't been notified yet, newest first."""
+def pending_notify_events(conn: sqlite3.Connection, site_id: str | None = None, limit: int | None = None) -> list[sqlite3.Row]:
+    """Return new_product events that haven't been notified yet, oldest first.
+
+    limit=None 返回全部积压（发送积压时不应截断，否则 >limit 的积压永远清不完）。
+    """
+    sql = "SELECT id, site_id, event_type, product_id, title, payload_json, created_at FROM events "
+    params: list = []
     if site_id:
-        return conn.execute(
-            "SELECT id, site_id, event_type, product_id, title, payload_json, created_at FROM events "
-            "WHERE event_type = 'new_product' AND notified = 0 AND site_id = ? "
-            "ORDER BY id ASC LIMIT ?",
-            (site_id, limit),
-        ).fetchall()
-    return conn.execute(
-        "SELECT id, site_id, event_type, product_id, title, payload_json, created_at FROM events "
-        "WHERE event_type = 'new_product' AND notified = 0 ORDER BY id ASC LIMIT ?",
-        (limit,),
-    ).fetchall()
+        sql += "WHERE event_type = 'new_product' AND notified = 0 AND site_id = ? "
+        params.append(site_id)
+    else:
+        sql += "WHERE event_type = 'new_product' AND notified = 0 "
+    sql += "ORDER BY id ASC"
+    if limit is not None:
+        sql += " LIMIT ?"
+        params.append(limit)
+    return conn.execute(sql, params).fetchall()
 
 
 def upsert_products(conn: sqlite3.Connection, site_id: str, products: list[dict]) -> list[dict]:

@@ -6,7 +6,7 @@ from . import db
 from .adapters.base import AdapterError
 from .adapters.factory import get_adapter
 from .config import AppConfig, SiteConfig
-from .notifiers.feishu import FeishuWebhookNotifier, NotifyError
+from .notifiers.feishu import FeishuWebhookNotifier
 from .notifiers.dingtalk import DingTalkWebhookNotifier
 
 
@@ -79,7 +79,7 @@ def scan_site(config: AppConfig, site: SiteConfig, notify: bool = True, full: bo
                         else:
                             n.send_markdown(dt_title, dt_markdown)
                         successes += 1
-                    except NotifyError as exc:
+                    except Exception as exc:  # noqa: BLE001 通知是尽力而为，绝不因推送失败拖垮扫描
                         db.insert_event(conn, site.id, "notify_error", None, f"{type(n).__name__} notify failed", {"error": str(exc)}, notified=False)
                 if successes:
                     db.set_events_notified(conn, event_ids)
@@ -92,11 +92,13 @@ def scan_site(config: AppConfig, site: SiteConfig, notify: bool = True, full: bo
         except AdapterError as exc:
             db.finish_scan(conn, run_id, "failed", total_products, new_total, str(exc))
             db.insert_event(conn, site.id, "scan_error", None, "Scan failed", {"error": str(exc)}, notified=False)
+            # 失败状态先落库：db() 上下文管理器在异常时会跳过 commit，不显式提交则整次扫描不留任何痕迹
+            conn.commit()
             if notify and site.notify.get("error", True):
                 for n in notifiers:
                     try:
                         n.send_text(f"[{site.name}] 扫描失败\n{exc}")
-                    except NotifyError:
+                    except Exception:  # noqa: BLE001
                         pass
             raise
 
@@ -115,6 +117,13 @@ def format_new_products(site: SiteConfig, products: list[dict]) -> str:
     if len(products) > 10:
         lines.append(f"还有 {len(products) - 10} 个新品未展示，请导出查看。")
     return "\n".join(lines).strip()
+
+
+def _remaining_hint(products: list[dict], shown: int) -> str:
+    """一行提示：推送受消息长度限制，其余新品需到 WebUI 商品页查看。"""
+    if len(products) <= shown:
+        return ""
+    return f"… 其余 {len(products) - shown} 个新品未展示，完整列表见监控 WebUI「商品」页"
 
 
 def format_new_products_card(site: SiteConfig, products: list[dict]) -> tuple[str, str, str]:
@@ -138,6 +147,9 @@ def format_new_products_card(site: SiteConfig, products: list[dict]) -> tuple[st
         lines.append("")
     if not shown:
         lines.append("暂无商品信息")
+    hint = _remaining_hint(products, len(shown))
+    if hint:
+        lines.append(hint)
     summary = f"发现 {len(products)} 个新品（最新 {len(shown)} 个）"
     title = f"[{site.name}] {summary}"
     markdown = "\n".join(lines).strip()
@@ -169,6 +181,9 @@ def format_new_products_dingtalk(site: SiteConfig, products: list[dict]) -> tupl
         lines.append("---")
     if not shown:
         lines.append("暂无商品信息")
+    hint = _remaining_hint(products, len(shown))
+    if hint:
+        lines.append(hint)
     summary = f"发现 {len(products)} 个新品（最新 {len(shown)} 个）"
     title = f"[{site.name}] {summary}"
     markdown = "\n".join(lines).strip()

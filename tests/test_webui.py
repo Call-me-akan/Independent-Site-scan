@@ -142,3 +142,81 @@ def test_config_template_has_sites(tmp_path):
     text = p.read_text(encoding="utf-8")
     assert "sites:" in text
     assert "feishu:" in text
+
+def test_send_pending_drains_full_backlog(client, tmp_path, monkeypatch):
+    """250 条积压事件一次「发送待发事件」应全部处理完，不再卡在 100 条上限。"""
+    from monitor import db as dbmod
+    from monitor.config import load_config, save_config
+    from monitor.notifiers.feishu import FeishuWebhookNotifier
+    from monitor.notifiers.dingtalk import DingTalkWebhookNotifier
+
+    cfg = load_config(tmp_path / "config.yaml")
+    cfg.feishu.webhook_url = "https://open.feishu.cn/open-apis/bot/v2/hook/dummy"
+    cfg.dingtalk.webhook_url = "https://oapi.dingtalk.com/robot/send?access_token=dummy"
+    save_config(cfg, tmp_path / "config.yaml")
+
+    # 造 250 条未通知的新品事件
+    dbmod.init_db(cfg.storage.path)
+    with dbmod.db(cfg.storage.path) as conn:
+        for i in range(250):
+            dbmod.insert_event(
+                conn,
+                "test-site",
+                "new_product",
+                str(i),
+                f"Product {i}",
+                {"product": {"id": str(i), "title": f"Product {i}", "url": f"https://test.example.com/products/p{i}"}},
+                notified=False,
+            )
+        assert len(dbmod.pending_notify_events(conn)) == 250
+
+    # 屏蔽真实网络发送
+    sent = []
+    monkeypatch.setattr(FeishuWebhookNotifier, "send_card", lambda self, *a, **k: sent.append(a))
+    monkeypatch.setattr(DingTalkWebhookNotifier, "send_markdown", lambda self, *a, **k: sent.append(a))
+
+    resp = client.post("/api/send-pending", json={})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["events"] == 250
+    assert data["notified_events"] == 250
+    assert data["remaining"] == 0
+    # 每个 notifier 各发一条聚合消息（按站点聚合）
+    assert len(sent) == 2
+
+    with dbmod.db(cfg.storage.path) as conn:
+        assert len(dbmod.pending_notify_events(conn)) == 0
+
+
+def test_send_pending_all_failed_keeps_events(client, tmp_path, monkeypatch):
+    """所有通道都发送失败时，事件不能被标记为已通知（否则积压被吞掉）。"""
+    from monitor import db as dbmod
+    from monitor.config import load_config, save_config
+    from monitor.notifiers.base import NotifyError
+    from monitor.notifiers.feishu import FeishuWebhookNotifier
+    from monitor.notifiers.dingtalk import DingTalkWebhookNotifier
+
+    cfg = load_config(tmp_path / "config.yaml")
+    cfg.feishu.webhook_url = "https://open.feishu.cn/open-apis/bot/v2/hook/dummy"
+    cfg.dingtalk.webhook_url = "https://oapi.dingtalk.com/robot/send?access_token=dummy"
+    save_config(cfg, tmp_path / "config.yaml")
+
+    dbmod.init_db(cfg.storage.path)
+    with dbmod.db(cfg.storage.path) as conn:
+        dbmod.insert_event(conn, "test-site", "new_product", "1", "P1", {"product": {"id": "1", "title": "P1"}}, notified=False)
+        dbmod.insert_event(conn, "test-site", "new_product", "2", "P2", {"product": {"id": "2", "title": "P2"}}, notified=False)
+
+    def fail_feishu(self, *a, **k):
+        raise NotifyError("feishu down")
+
+    def fail_dingtalk(self, *a, **k):
+        raise NotifyError("dingtalk down")
+
+    monkeypatch.setattr(FeishuWebhookNotifier, "send_card", fail_feishu)
+    monkeypatch.setattr(DingTalkWebhookNotifier, "send_markdown", fail_dingtalk)
+
+    resp = client.post("/api/send-pending", json={})
+    assert resp.status_code == 500
+
+    with dbmod.db(cfg.storage.path) as conn:
+        assert len(dbmod.pending_notify_events(conn)) == 2  # 仍待发

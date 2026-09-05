@@ -15,7 +15,18 @@ class ShopifyProductsJsonAdapter:
 
     def __init__(self, base_url: str, timeout: int = 20):
         self.base_url = base_url.rstrip("/")
+        # /products.json 永远在站点根路径下。base_url 可能被配置成集合/搜索页 URL
+        # （如 https://shop.com/collections/all?sort=...），直接拼接 /products.json
+        # 会得到 .../collections/all/products.json 这类 404 地址。统一取根域名。
+        self.root_url = self._extract_root(self.base_url)
         self.timeout = timeout
+
+    @staticmethod
+    def _extract_root(url: str) -> str:
+        parsed = urllib.parse.urlsplit(url)
+        if not parsed.scheme or not parsed.netloc:
+            raise AdapterError(f"Invalid base_url: {url}")
+        return f"{parsed.scheme}://{parsed.netloc}"
 
     def iter_product_pages(self, max_pages: int = 1, start_page: int = 1):
         seen: set[str] = set()
@@ -28,7 +39,7 @@ class ShopifyProductsJsonAdapter:
                 break
             normalized = []
             for raw in products:
-                product = normalize_product(self.base_url, raw)
+                product = normalize_product(self.root_url, raw)
                 product_id = str(product.get("id") or product.get("handle"))
                 if product_id and product_id not in seen:
                     seen.add(product_id)
@@ -47,7 +58,7 @@ class ShopifyProductsJsonAdapter:
         return FetchResult(products=all_products, pages=pages)
 
     def _get_json(self, path: str) -> dict:
-        url = self.base_url + path
+        url = self.root_url + path
         req = urllib.request.Request(
             url,
             headers={
@@ -61,6 +72,8 @@ class ShopifyProductsJsonAdapter:
                 body = resp.read()
                 content_type = resp.headers.get("content-type", "")
         except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                raise AdapterError(f"HTTP 404: {url}（站点可能未启用 /products.json 或已更换建站平台，请改用 embedded_page_products 适配器或移除该站点）") from exc
             raise AdapterError(f"HTTP {exc.code}: {url}") from exc
         except urllib.error.URLError as exc:
             raise AdapterError(f"Request failed: {url}: {exc.reason}") from exc
@@ -77,6 +90,10 @@ class ShopifyProductsJsonAdapter:
 
 
 def normalize_product(base_url: str, raw: dict) -> dict:
+    # 商品 URL 必须以站点根域名拼接，防止 base_url 是集合/搜索页路径时生成
+    # /collections/all/products/x 这类嵌套地址（Shopify 虽会重定向，但不干净）。
+    parsed = urllib.parse.urlsplit(base_url)
+    root = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else base_url.rstrip("/")
     variants = raw.get("variants") or []
     prices = [float_or_none(v.get("price")) for v in variants]
     prices = [p for p in prices if p is not None]
@@ -86,7 +103,7 @@ def normalize_product(base_url: str, raw: dict) -> dict:
         "id": str(raw.get("id") or handle),
         "title": raw.get("title") or "",
         "handle": handle,
-        "url": base_url.rstrip("/") + "/products/" + urllib.parse.quote(handle),
+        "url": root + "/products/" + urllib.parse.quote(handle),
         "body_html": raw.get("body_html") or "",
         "vendor": raw.get("vendor") or "",
         "product_type": raw.get("product_type") or "",

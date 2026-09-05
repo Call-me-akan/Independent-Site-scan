@@ -9,9 +9,7 @@ import time
 import urllib.error
 import urllib.request
 
-
-class NotifyError(RuntimeError):
-    pass
+from .base import NotifyError
 
 
 class FeishuWebhookNotifier:

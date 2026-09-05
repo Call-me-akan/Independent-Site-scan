@@ -21,9 +21,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-
-class NotifyError(RuntimeError):
-    pass
+from .base import NotifyError
 
 
 class DingTalkWebhookNotifier:

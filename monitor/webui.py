@@ -319,15 +319,17 @@ def create_app(config_path: str = "config.yaml") -> Flask:
         site_id = (request.get_json(silent=True) or {}).get("site") or ""
         db.init_db(cfg.storage.path)
         with db.db(cfg.storage.path) as conn:
-            events = db.pending_notify_events(conn, site_id or None, limit=100)
+            # 不设 limit：一次处理全部积压，避免 100 条上限导致积压永远清不完
+            events = db.pending_notify_events(conn, site_id or None)
         if not events:
             return jsonify({"ok": True, "sent": 0, "message": "没有待发送的新品事件"})
 
         # 按 site 分组，每个 site 一条聚合消息
         from collections import defaultdict
-        from .scanner import format_new_products_card, format_new_products_dingtalk, _price
+        from .scanner import format_new_products_card, format_new_products_dingtalk
 
         by_site = defaultdict(list)
+        event_ids_by_site = defaultdict(list)
         for ev in events:
             try:
                 payload = json.loads(ev["payload_json"]) if ev["payload_json"] else {}
@@ -335,9 +337,11 @@ def create_app(config_path: str = "config.yaml") -> Flask:
                 payload = {}
             product = payload.get("product") or {}
             by_site[ev["site_id"]].append(product)
+            event_ids_by_site[ev["site_id"]].append(ev["id"])
 
         sent_total = 0
         failures = []
+        notified_ids: list[int] = []
         for sid, products in by_site.items():
             site = None
             for s in cfg.sites:
@@ -348,6 +352,7 @@ def create_app(config_path: str = "config.yaml") -> Flask:
                 continue
             title, md, first_url = format_new_products_card(site, products)
             dt_title, dt_md, _ = format_new_products_dingtalk(site, products)
+            site_ok = False
             for n in notifiers:
                 try:
                     if isinstance(n, _F):
@@ -355,14 +360,26 @@ def create_app(config_path: str = "config.yaml") -> Flask:
                     else:
                         n.send_markdown(dt_title, dt_md)
                     sent_total += 1
+                    site_ok = True
                 except Exception as exc:
                     failures.append(f"{sid}/{type(n).__name__}: {exc}")
-        if failures and sent_total == 0:
+            if site_ok:
+                # 仅当该站点至少一个通道发送成功才标记已通知，避免全失败的事件被吞掉
+                notified_ids.extend(event_ids_by_site[sid])
+        if failures and not notified_ids:
             return jsonify({"ok": False, "error": "; ".join(failures)}), 500
         # 标记已通知
         with db.db(cfg.storage.path) as conn:
-            db.set_events_notified(conn, [ev["id"] for ev in events])
-        return jsonify({"ok": True, "sent": sent_total, "events": len(events), "failures": failures})
+            db.set_events_notified(conn, notified_ids)
+            remaining = db.pending_notify_events(conn, site_id or None)
+        return jsonify({
+            "ok": True,
+            "sent": sent_total,
+            "events": len(events),
+            "notified_events": len(notified_ids),
+            "remaining": len(remaining),
+            "failures": failures,
+        })
 
     @app.post("/api/send-pending/ignore-all")
     def api_ignore_pending():
@@ -659,7 +676,7 @@ async function toggleDaemon(){
 }
 async function sendPending(){
   const res=await api('/api/send-pending',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-  if(res.ok){toast(res.events?`已发送 ${res.sent} 条（事件 ${res.events} 条）`:(res.message||'完成'))}
+  if(res.ok){toast(res.events?`已发送 ${res.sent} 条（事件 ${res.events} 条${res.remaining?`，剩余 ${res.remaining} 条`:'，全部发送完成'}）`:(res.message||'完成'))}
   else toast('发送失败：'+(res.error||''));
   loadStatus();}
 async function ignorePending(){

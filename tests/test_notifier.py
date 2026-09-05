@@ -1,8 +1,20 @@
 import json
 
 from monitor.notifiers.feishu import FeishuWebhookNotifier
+from monitor.notifiers.dingtalk import DingTalkWebhookNotifier
 from monitor.scanner import format_new_products_card
 from monitor.config import SiteConfig
+
+
+def test_notify_error_is_shared_class():
+    """feishu/dingtalk 必须抛同一个 NotifyError，scanner 才能统一捕获。"""
+    from monitor.notifiers.feishu import NotifyError as FeishuNotifyError
+    from monitor.notifiers.dingtalk import NotifyError as DingTalkNotifyError
+    from monitor.notifiers.base import NotifyError as BaseNotifyError
+
+    assert FeishuNotifyError is BaseNotifyError
+    assert DingTalkNotifyError is BaseNotifyError
+    assert FeishuNotifyError is DingTalkNotifyError
 
 
 def test_send_card_payload_is_interactive():
